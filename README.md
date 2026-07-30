@@ -1,4 +1,4 @@
-# SGP Core
+# SGP Updater
 
 Keeps an SGP-built WordPress theme updated from its GitHub repository, using WordPress's own update flow. Updates appear under **Dashboard → Updates** and **Appearance → Themes** exactly like any other theme update — there is no separate interface to learn.
 
@@ -18,7 +18,7 @@ So the release process is: bump `Version:` in `style.css`, commit, push. Nothing
 
 The header name is deliberately the same one [Git Updater](https://github.com/afragen/git-updater) uses, so a site can be moved between the two without editing the theme.
 
-The plugin also keeps *itself* updated from `SGP-Design/sgp-core` the same way.
+The plugin also keeps *itself* updated from `SGP-Design/sgp-updater` the same way.
 
 ## Installation
 

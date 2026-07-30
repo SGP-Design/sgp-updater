@@ -1,7 +1,7 @@
 <?php
 /**
- * Plugin Name: SGP Core
- * Plugin URI:  https://github.com/SGP-Design/sgp-core
+ * Plugin Name: SGP Updater
+ * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
  * Version:     1.0.0
  * Author:      Strategic Growth Partners
@@ -9,14 +9,14 @@
  * Requires at least: 6.0
  * Requires PHP: 8.0
  *
- * @package SGP_Core
+ * @package SGP_Updater
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_CORE_VERSION', '1.0.0' );
+define( 'SGP_UPDATER_VERSION', '1.0.0' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
@@ -26,7 +26,7 @@ define( 'SGP_CORE_VERSION', '1.0.0' );
  *
  * @return string Repository URL, or '' if the theme doesn't declare one.
  */
-function sgp_core_theme_repo_url() {
+function sgp_updater_theme_repo_url() {
 	// WP_Theme::get() only recognises WordPress's own fixed set of headers and
 	// silently ignores custom ones, so read style.css directly.
 	$headers = get_file_data(
@@ -59,12 +59,12 @@ function sgp_core_theme_repo_url() {
  *
  * @return string
  */
-function sgp_core_github_token() {
+function sgp_updater_github_token() {
 	if ( defined( 'SGP_GITHUB_TOKEN' ) && is_string( SGP_GITHUB_TOKEN ) && '' !== SGP_GITHUB_TOKEN ) {
 		return SGP_GITHUB_TOKEN;
 	}
 
-	$token = get_option( 'sgp_core_github_token', '' );
+	$token = get_option( 'sgp_updater_github_token', '' );
 
 	return is_string( $token ) ? $token : '';
 }
@@ -74,15 +74,15 @@ function sgp_core_github_token() {
  *
  * @return bool
  */
-function sgp_core_token_is_constant() {
+function sgp_updater_token_is_constant() {
 	return defined( 'SGP_GITHUB_TOKEN' ) && is_string( SGP_GITHUB_TOKEN ) && '' !== SGP_GITHUB_TOKEN;
 }
 
 /**
  * Wire the active theme up to its GitHub repository.
  */
-function sgp_core_init_theme_updater() {
-	$repo = sgp_core_theme_repo_url();
+function sgp_updater_init_theme_updater() {
+	$repo = sgp_updater_theme_repo_url();
 
 	if ( '' === $repo ) {
 		return;
@@ -101,40 +101,40 @@ function sgp_core_init_theme_updater() {
 	// releases to remember.
 	$checker->setBranch( 'main' );
 
-	$token = sgp_core_github_token();
+	$token = sgp_updater_github_token();
 	if ( '' !== $token ) {
 		$checker->setAuthentication( $token );
 	}
 
-	$GLOBALS['sgp_core_checker'] = $checker;
+	$GLOBALS['sgp_updater_checker'] = $checker;
 }
-add_action( 'plugins_loaded', 'sgp_core_init_theme_updater' );
+add_action( 'plugins_loaded', 'sgp_updater_init_theme_updater' );
 
 /**
  * Keep this plugin updated from its own repository.
  *
- * Without this, updating SGP Core itself would mean uploading a zip by hand —
+ * Without this, updating SGP Updater itself would mean uploading a zip by hand —
  * exactly the chore the plugin exists to remove.
  */
-function sgp_core_init_self_updater() {
+function sgp_updater_init_self_updater() {
 	require_once __DIR__ . '/plugin-update-checker/plugin-update-checker.php';
 
 	$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-		'https://github.com/SGP-Design/sgp-core',
+		'https://github.com/SGP-Design/sgp-updater',
 		__FILE__,
-		'sgp-core'
+		'sgp-updater'
 	);
 
 	$checker->setBranch( 'main' );
 
-	$token = sgp_core_github_token();
+	$token = sgp_updater_github_token();
 	if ( '' !== $token ) {
 		$checker->setAuthentication( $token );
 	}
 
-	$GLOBALS['sgp_core_self_checker'] = $checker;
+	$GLOBALS['sgp_updater_self_checker'] = $checker;
 }
-add_action( 'plugins_loaded', 'sgp_core_init_self_updater' );
+add_action( 'plugins_loaded', 'sgp_updater_init_self_updater' );
 
 /* -------------------------------------------------------------------------
  * Settings screen
@@ -143,33 +143,33 @@ add_action( 'plugins_loaded', 'sgp_core_init_self_updater' );
 /**
  * Register the settings page.
  */
-function sgp_core_admin_menu() {
+function sgp_updater_admin_menu() {
 	add_options_page(
-		__( 'SGP Updates', 'sgp-core' ),
-		__( 'SGP Updates', 'sgp-core' ),
+		__( 'SGP Updates', 'sgp-updater' ),
+		__( 'SGP Updates', 'sgp-updater' ),
 		'manage_options',
-		'sgp-core',
-		'sgp_core_render_settings_page'
+		'sgp-updater',
+		'sgp_updater_render_settings_page'
 	);
 }
-add_action( 'admin_menu', 'sgp_core_admin_menu' );
+add_action( 'admin_menu', 'sgp_updater_admin_menu' );
 
 /**
  * Register the token setting.
  */
-function sgp_core_register_settings() {
+function sgp_updater_register_settings() {
 	register_setting(
-		'sgp_core',
-		'sgp_core_github_token',
+		'sgp_updater',
+		'sgp_updater_github_token',
 		array(
 			'type'              => 'string',
-			'sanitize_callback' => 'sgp_core_sanitize_token',
+			'sanitize_callback' => 'sgp_updater_sanitize_token',
 			'default'           => '',
 			'show_in_rest'      => false,
 		)
 	);
 }
-add_action( 'admin_init', 'sgp_core_register_settings' );
+add_action( 'admin_init', 'sgp_updater_register_settings' );
 
 /**
  * Strip whitespace and control characters from a submitted token.
@@ -177,7 +177,7 @@ add_action( 'admin_init', 'sgp_core_register_settings' );
  * @param mixed $value Raw submitted value.
  * @return string
  */
-function sgp_core_sanitize_token( $value ) {
+function sgp_updater_sanitize_token( $value ) {
 	if ( ! is_string( $value ) ) {
 		return '';
 	}
@@ -193,13 +193,13 @@ function sgp_core_sanitize_token( $value ) {
  *
  * @return array{ok:bool,message:string}
  */
-function sgp_core_connection_status() {
-	$repo = sgp_core_theme_repo_url();
+function sgp_updater_connection_status() {
+	$repo = sgp_updater_theme_repo_url();
 
 	if ( '' === $repo ) {
 		return array(
 			'ok'      => false,
-			'message' => __( 'The active theme has no "GitHub Theme URI" header, so there is no repository to check.', 'sgp-core' ),
+			'message' => __( 'The active theme has no "GitHub Theme URI" header, so there is no repository to check.', 'sgp-updater' ),
 		);
 	}
 
@@ -207,7 +207,7 @@ function sgp_core_connection_status() {
 	if ( ! is_string( $path ) || ! preg_match( '#^/([^/]+)/([^/]+)#', $path, $m ) ) {
 		return array(
 			'ok'      => false,
-			'message' => __( 'The theme\'s "GitHub Theme URI" header is not a recognisable owner/repository address.', 'sgp-core' ),
+			'message' => __( 'The theme\'s "GitHub Theme URI" header is not a recognisable owner/repository address.', 'sgp-updater' ),
 		);
 	}
 
@@ -215,11 +215,11 @@ function sgp_core_connection_status() {
 		'timeout' => 15,
 		'headers' => array(
 			'Accept'     => 'application/vnd.github+json',
-			'User-Agent' => 'SGP-Core/' . SGP_CORE_VERSION,
+			'User-Agent' => 'SGP-Updater/' . SGP_UPDATER_VERSION,
 		),
 	);
 
-	$token = sgp_core_github_token();
+	$token = sgp_updater_github_token();
 	if ( '' !== $token ) {
 		$args['headers']['Authorization'] = 'Bearer ' . $token;
 	}
@@ -230,7 +230,7 @@ function sgp_core_connection_status() {
 		return array(
 			'ok'      => false,
 			/* translators: %s: error message returned by WordPress. */
-			'message' => sprintf( __( 'Could not reach github.com: %s. This usually means the host is blocking outbound connections.', 'sgp-core' ), $response->get_error_message() ),
+			'message' => sprintf( __( 'Could not reach github.com: %s. This usually means the host is blocking outbound connections.', 'sgp-updater' ), $response->get_error_message() ),
 		);
 	}
 
@@ -240,68 +240,68 @@ function sgp_core_connection_status() {
 		return array(
 			'ok'      => true,
 			/* translators: %s: owner/repository. */
-			'message' => sprintf( __( 'Connected to %s.', 'sgp-core' ), "{$m[1]}/{$m[2]}" ),
+			'message' => sprintf( __( 'Connected to %s.', 'sgp-updater' ), "{$m[1]}/{$m[2]}" ),
 		);
 	}
 
 	if ( 401 === $code ) {
 		return array(
 			'ok'      => false,
-			'message' => __( 'GitHub rejected the token. Check that it is correct and has not expired.', 'sgp-core' ),
+			'message' => __( 'GitHub rejected the token. Check that it is correct and has not expired.', 'sgp-updater' ),
 		);
 	}
 
 	if ( 404 === $code ) {
 		return array(
 			'ok'      => false,
-			'message' => __( 'Repository not found. For a private repository this also happens when the token has no access to it.', 'sgp-core' ),
+			'message' => __( 'Repository not found. For a private repository this also happens when the token has no access to it.', 'sgp-updater' ),
 		);
 	}
 
 	return array(
 		'ok'      => false,
 		/* translators: %d: HTTP status code. */
-		'message' => sprintf( __( 'GitHub returned an unexpected status (%d).', 'sgp-core' ), $code ),
+		'message' => sprintf( __( 'GitHub returned an unexpected status (%d).', 'sgp-updater' ), $code ),
 	);
 }
 
 /**
  * Render the settings screen.
  */
-function sgp_core_render_settings_page() {
+function sgp_updater_render_settings_page() {
 	if ( ! current_user_can( 'manage_options' ) ) {
 		return;
 	}
 
-	$repo   = sgp_core_theme_repo_url();
+	$repo   = sgp_updater_theme_repo_url();
 	$theme  = wp_get_theme( get_template() );
-	$status = sgp_core_connection_status();
+	$status = sgp_updater_connection_status();
 	?>
 	<div class="wrap">
-		<h1><?php esc_html_e( 'SGP Updates', 'sgp-core' ); ?></h1>
+		<h1><?php esc_html_e( 'SGP Updates', 'sgp-updater' ); ?></h1>
 
 		<table class="widefat striped" style="max-width:820px;margin-bottom:1.5em;">
 			<tbody>
 				<tr>
-					<th scope="row" style="width:180px;"><?php esc_html_e( 'Theme', 'sgp-core' ); ?></th>
+					<th scope="row" style="width:180px;"><?php esc_html_e( 'Theme', 'sgp-updater' ); ?></th>
 					<td><?php echo esc_html( $theme->get( 'Name' ) . ' ' . $theme->get( 'Version' ) ); ?></td>
 				</tr>
 				<tr>
-					<th scope="row"><?php esc_html_e( 'Repository', 'sgp-core' ); ?></th>
+					<th scope="row"><?php esc_html_e( 'Repository', 'sgp-updater' ); ?></th>
 					<td>
 						<?php if ( '' === $repo ) : ?>
-							<em><?php esc_html_e( 'none declared by the theme', 'sgp-core' ); ?></em>
+							<em><?php esc_html_e( 'none declared by the theme', 'sgp-updater' ); ?></em>
 						<?php else : ?>
 							<code><?php echo esc_html( $repo ); ?></code>
 						<?php endif; ?>
 					</td>
 				</tr>
 				<tr>
-					<th scope="row"><?php esc_html_e( 'Branch', 'sgp-core' ); ?></th>
+					<th scope="row"><?php esc_html_e( 'Branch', 'sgp-updater' ); ?></th>
 					<td><code>main</code></td>
 				</tr>
 				<tr>
-					<th scope="row"><?php esc_html_e( 'Connection', 'sgp-core' ); ?></th>
+					<th scope="row"><?php esc_html_e( 'Connection', 'sgp-updater' ); ?></th>
 					<td>
 						<?php if ( $status['ok'] ) : ?>
 							<span style="color:#008a20;font-weight:600;">&#10003;</span>
@@ -314,27 +314,27 @@ function sgp_core_render_settings_page() {
 			</tbody>
 		</table>
 
-		<?php if ( sgp_core_token_is_constant() ) : ?>
-			<p><?php esc_html_e( 'The access token is set in wp-config.php, so it cannot be changed here.', 'sgp-core' ); ?></p>
+		<?php if ( sgp_updater_token_is_constant() ) : ?>
+			<p><?php esc_html_e( 'The access token is set in wp-config.php, so it cannot be changed here.', 'sgp-updater' ); ?></p>
 		<?php else : ?>
 			<form method="post" action="options.php">
-				<?php settings_fields( 'sgp_core' ); ?>
+				<?php settings_fields( 'sgp_updater' ); ?>
 				<table class="form-table" role="presentation">
 					<tr>
 						<th scope="row">
-							<label for="sgp_core_github_token"><?php esc_html_e( 'GitHub access token', 'sgp-core' ); ?></label>
+							<label for="sgp_updater_github_token"><?php esc_html_e( 'GitHub access token', 'sgp-updater' ); ?></label>
 						</th>
 						<td>
 							<input
 								type="password"
-								id="sgp_core_github_token"
-								name="sgp_core_github_token"
-								value="<?php echo esc_attr( get_option( 'sgp_core_github_token', '' ) ); ?>"
+								id="sgp_updater_github_token"
+								name="sgp_updater_github_token"
+								value="<?php echo esc_attr( get_option( 'sgp_updater_github_token', '' ) ); ?>"
 								class="regular-text"
 								autocomplete="off"
 							/>
 							<p class="description">
-								<?php esc_html_e( 'Required for a private repository. Needs read access to the theme repository and nothing else.', 'sgp-core' ); ?>
+								<?php esc_html_e( 'Required for a private repository. Needs read access to the theme repository and nothing else.', 'sgp-updater' ); ?>
 							</p>
 						</td>
 					</tr>
@@ -344,7 +344,7 @@ function sgp_core_render_settings_page() {
 		<?php endif; ?>
 
 		<p class="description" style="max-width:820px;">
-			<?php esc_html_e( 'Updates appear under Dashboard → Updates and Appearance → Themes, the same as any other theme update. An update is offered whenever the Version header in the repository is higher than the installed version.', 'sgp-core' ); ?>
+			<?php esc_html_e( 'Updates appear under Dashboard → Updates and Appearance → Themes, the same as any other theme update. An update is offered whenever the Version header in the repository is higher than the installed version.', 'sgp-updater' ); ?>
 		</p>
 	</div>
 	<?php
