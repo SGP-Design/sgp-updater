@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.0
+ * Version:     1.0.1
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.0' );
+define( 'SGP_UPDATER_VERSION', '1.0.1' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
@@ -153,6 +153,28 @@ function sgp_updater_admin_menu() {
 	);
 }
 add_action( 'admin_menu', 'sgp_updater_admin_menu' );
+
+/**
+ * Add a Settings link under the plugin's name on the Plugins screen.
+ *
+ * Without this the settings page is only reachable from the Settings menu,
+ * which is not where anyone looks after activating a plugin.
+ *
+ * @param array $links Existing action links.
+ * @return array
+ */
+function sgp_updater_action_links( $links ) {
+	$settings = sprintf(
+		'<a href="%s">%s</a>',
+		esc_url( admin_url( 'options-general.php?page=sgp-updater' ) ),
+		esc_html__( 'Settings', 'sgp-updater' )
+	);
+
+	array_unshift( $links, $settings );
+
+	return $links;
+}
+add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'sgp_updater_action_links' );
 
 /**
  * Register the token setting.
