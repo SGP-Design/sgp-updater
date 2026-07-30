@@ -1,4 +1,4 @@
-# SGA Core
+# SGP Core
 
 Keeps an SGP-built WordPress theme updated from its GitHub repository, using WordPress's own update flow. Updates appear under **Dashboard → Updates** and **Appearance → Themes** exactly like any other theme update — there is no separate interface to learn.
 
@@ -18,7 +18,7 @@ So the release process is: bump `Version:` in `style.css`, commit, push. Nothing
 
 The header name is deliberately the same one [Git Updater](https://github.com/afragen/git-updater) uses, so a site can be moved between the two without editing the theme.
 
-The plugin also keeps *itself* updated from `SGP-Design/sga-core` the same way.
+The plugin also keeps *itself* updated from `SGP-Design/sgp-core` the same way.
 
 ## Installation
 
@@ -33,7 +33,7 @@ The token is only needed for private repositories. It needs read access to the t
 If `wp-config.php` can be edited, prefer:
 
 ```php
-define( 'SGA_GITHUB_TOKEN', 'ghp_your_token_here' );
+define( 'SGP_GITHUB_TOKEN', 'ghp_your_token_here' );
 ```
 
 A constant keeps the token out of the database, so a database export doesn't leak it. The plugin prefers the constant when both are present, and hides the settings field.
