@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.1
+ * Version:     1.0.2
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.1' );
+define( 'SGP_UPDATER_VERSION', '1.0.2' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
@@ -145,8 +145,8 @@ add_action( 'plugins_loaded', 'sgp_updater_init_self_updater' );
  */
 function sgp_updater_admin_menu() {
 	add_options_page(
-		__( 'SGP Updates', 'sgp-updater' ),
-		__( 'SGP Updates', 'sgp-updater' ),
+		__( 'SGP Updater', 'sgp-updater' ),
+		__( 'SGP Updater', 'sgp-updater' ),
 		'manage_options',
 		'sgp-updater',
 		'sgp_updater_render_settings_page'
@@ -164,10 +164,19 @@ add_action( 'admin_menu', 'sgp_updater_admin_menu' );
  * @return array
  */
 function sgp_updater_action_links( $links ) {
+	$status = sgp_updater_connection_status();
+
+	// While the connection is broken the link is the next thing to do, so it
+	// says so and is emphasised. "Settings" reads as optional configuration
+	// and is easy to skip past on a screen full of plugin rows.
+	$label = $status['ok']
+		? esc_html__( 'Settings', 'sgp-updater' )
+		: '<strong>' . esc_html__( 'Finish setup', 'sgp-updater' ) . '</strong>';
+
 	$settings = sprintf(
 		'<a href="%s">%s</a>',
 		esc_url( admin_url( 'options-general.php?page=sgp-updater' ) ),
-		esc_html__( 'Settings', 'sgp-updater' )
+		$label
 	);
 
 	array_unshift( $links, $settings );
@@ -208,6 +217,48 @@ function sgp_updater_sanitize_token( $value ) {
 }
 
 /**
+ * Connection status, cached.
+ *
+ * The status is shown on the Plugins, Themes, Dashboard and Updates screens, so
+ * an uncached check would make two GitHub API calls on every one of those page
+ * loads - and a slow or unreachable host would stall the admin for the length
+ * of the timeout. Five minutes is short enough that a token fix shows up almost
+ * immediately and long enough that normal admin use costs nothing.
+ *
+ * Saving the token and the Re-check button both clear it, so the two moments
+ * when someone is actually waiting for an answer always get a live result.
+ *
+ * @param bool $fresh Skip the cache and ask GitHub now.
+ * @return array{ok:bool,message:string,fix:string}
+ */
+function sgp_updater_connection_status( $fresh = false ) {
+	if ( ! $fresh ) {
+		$cached = get_transient( 'sgp_updater_status' );
+
+		if ( is_array( $cached ) && isset( $cached['ok'] ) ) {
+			return $cached;
+		}
+	}
+
+	$status = sgp_updater_check_connection();
+
+	set_transient( 'sgp_updater_status', $status, 5 * MINUTE_IN_SECONDS );
+
+	return $status;
+}
+
+/**
+ * Drop the cached status whenever the token changes.
+ *
+ * @return void
+ */
+function sgp_updater_flush_status() {
+	delete_transient( 'sgp_updater_status' );
+}
+add_action( 'update_option_sgp_updater_github_token', 'sgp_updater_flush_status' );
+add_action( 'add_option_sgp_updater_github_token', 'sgp_updater_flush_status' );
+
+/**
  * Ask GitHub whether the repository is reachable with the current credentials.
  *
  * Used only by the settings screen, to separate a token problem from a
@@ -215,13 +266,14 @@ function sgp_updater_sanitize_token( $value ) {
  *
  * @return array{ok:bool,message:string}
  */
-function sgp_updater_connection_status() {
+function sgp_updater_check_connection() {
 	$repo = sgp_updater_theme_repo_url();
 
 	if ( '' === $repo ) {
 		return array(
 			'ok'      => false,
 			'message' => __( 'The active theme has no "GitHub Theme URI" header, so there is no repository to check.', 'sgp-updater' ),
+			'fix'     => __( 'This is a theme problem, not a token problem. The theme needs the header before it can be updated from GitHub.', 'sgp-updater' ),
 		);
 	}
 
@@ -230,9 +282,104 @@ function sgp_updater_connection_status() {
 		return array(
 			'ok'      => false,
 			'message' => __( 'The theme\'s "GitHub Theme URI" header is not a recognisable owner/repository address.', 'sgp-updater' ),
+			'fix'     => __( 'It should read like SGP-Design/example-website.', 'sgp-updater' ),
 		);
 	}
 
+	$slug  = "{$m[1]}/{$m[2]}";
+	$token = sgp_updater_github_token();
+
+	// Stage one: can we see the repository at all? This only needs the
+	// Metadata permission, which GitHub grants automatically.
+	$repo_call = sgp_updater_github_get( "https://api.github.com/repos/{$slug}" );
+
+	if ( is_wp_error( $repo_call ) ) {
+		return array(
+			'ok'      => false,
+			/* translators: %s: error message returned by WordPress. */
+			'message' => sprintf( __( 'Could not reach github.com: %s', 'sgp-updater' ), $repo_call->get_error_message() ),
+			'fix'     => __( 'The site could not make an outbound connection. That is a hosting question rather than a token question.', 'sgp-updater' ),
+		);
+	}
+
+	$code = (int) wp_remote_retrieve_response_code( $repo_call );
+
+	if ( 401 === $code ) {
+		return array(
+			'ok'      => false,
+			'message' => __( 'GitHub rejected the token.', 'sgp-updater' ),
+			'fix'     => __( 'The token is wrong, was truncated when pasted, or has expired. Generate a new one and paste it again.', 'sgp-updater' ),
+		);
+	}
+
+	if ( 404 === $code ) {
+		if ( '' === $token ) {
+			return array(
+				'ok'      => false,
+				/* translators: %s: owner/repository. */
+				'message' => sprintf( __( '%s is private and no token has been saved yet.', 'sgp-updater' ), $slug ),
+				'fix'     => __( 'Create a token below and paste it in.', 'sgp-updater' ),
+			);
+		}
+
+		return array(
+			'ok'      => false,
+			/* translators: %s: owner/repository. */
+			'message' => sprintf( __( 'The token cannot see %s.', 'sgp-updater' ), $slug ),
+			'fix'     => __( 'Usually the Resource owner was left as your personal account instead of the organisation, or this repository was not ticked under Repository access.', 'sgp-updater' ),
+		);
+	}
+
+	if ( 200 !== $code ) {
+		return array(
+			'ok'      => false,
+			/* translators: %d: HTTP status code. */
+			'message' => sprintf( __( 'GitHub returned an unexpected status (%d).', 'sgp-updater' ), $code ),
+			'fix'     => '',
+		);
+	}
+
+	// Stage two: can we actually read files? Downloading the theme needs the
+	// Contents permission, and seeing the repository does not imply having it.
+	// Checking only stage one reports a healthy connection for a token that
+	// cannot download a single update.
+	$contents = sgp_updater_github_get( "https://api.github.com/repos/{$slug}/contents" );
+
+	if ( is_wp_error( $contents ) ) {
+		return array(
+			'ok'      => false,
+			/* translators: %s: error message returned by WordPress. */
+			'message' => sprintf( __( 'Could not reach github.com: %s', 'sgp-updater' ), $contents->get_error_message() ),
+			'fix'     => '',
+		);
+	}
+
+	$contents_code = (int) wp_remote_retrieve_response_code( $contents );
+
+	if ( 200 !== $contents_code ) {
+		return array(
+			'ok'      => false,
+			/* translators: %s: owner/repository. */
+			'message' => sprintf( __( 'The token can see %s but cannot read its files.', 'sgp-updater' ), $slug ),
+			'fix'     => __( 'The token is missing the Contents permission. Edit it on GitHub, and under Repository permissions set Contents to Read-only.', 'sgp-updater' ),
+		);
+	}
+
+	return array(
+		'ok'      => true,
+		/* translators: %s: owner/repository. */
+		'message' => sprintf( __( 'Connected to %s and able to download updates.', 'sgp-updater' ), $slug ),
+		'fix'     => '',
+	);
+}
+
+/**
+ * GET a GitHub API URL with the current token attached.
+ *
+ * @param string $url Full API URL.
+ * @return array|WP_Error
+ */
+function sgp_updater_github_get( $url ) {
 	$args = array(
 		'timeout' => 15,
 		'headers' => array(
@@ -246,45 +393,7 @@ function sgp_updater_connection_status() {
 		$args['headers']['Authorization'] = 'Bearer ' . $token;
 	}
 
-	$response = wp_remote_get( "https://api.github.com/repos/{$m[1]}/{$m[2]}", $args );
-
-	if ( is_wp_error( $response ) ) {
-		return array(
-			'ok'      => false,
-			/* translators: %s: error message returned by WordPress. */
-			'message' => sprintf( __( 'Could not reach github.com: %s. This usually means the host is blocking outbound connections.', 'sgp-updater' ), $response->get_error_message() ),
-		);
-	}
-
-	$code = (int) wp_remote_retrieve_response_code( $response );
-
-	if ( 200 === $code ) {
-		return array(
-			'ok'      => true,
-			/* translators: %s: owner/repository. */
-			'message' => sprintf( __( 'Connected to %s.', 'sgp-updater' ), "{$m[1]}/{$m[2]}" ),
-		);
-	}
-
-	if ( 401 === $code ) {
-		return array(
-			'ok'      => false,
-			'message' => __( 'GitHub rejected the token. Check that it is correct and has not expired.', 'sgp-updater' ),
-		);
-	}
-
-	if ( 404 === $code ) {
-		return array(
-			'ok'      => false,
-			'message' => __( 'Repository not found. For a private repository this also happens when the token has no access to it.', 'sgp-updater' ),
-		);
-	}
-
-	return array(
-		'ok'      => false,
-		/* translators: %d: HTTP status code. */
-		'message' => sprintf( __( 'GitHub returned an unexpected status (%d).', 'sgp-updater' ), $code ),
-	);
+	return wp_remote_get( $url, $args );
 }
 
 /**
@@ -297,10 +406,32 @@ function sgp_updater_render_settings_page() {
 
 	$repo   = sgp_updater_theme_repo_url();
 	$theme  = wp_get_theme( get_template() );
-	$status = sgp_updater_connection_status();
+	$status = sgp_updater_connection_status( true );
+	$token  = sgp_updater_github_token();
 	?>
 	<div class="wrap">
-		<h1><?php esc_html_e( 'SGP Updates', 'sgp-updater' ); ?></h1>
+		<h1><?php esc_html_e( 'SGP Updater', 'sgp-updater' ); ?></h1>
+
+		<div class="notice <?php echo $status['ok'] ? 'notice-success' : 'notice-error'; ?> inline" style="margin:1em 0;padding:12px;">
+			<p style="margin:0;font-size:14px;">
+				<strong>
+					<?php if ( $status['ok'] ) : ?>
+						<span style="color:#008a20;">&#10003;</span> <?php esc_html_e( 'Connected', 'sgp-updater' ); ?>
+					<?php else : ?>
+						<span style="color:#d63638;">&#10007;</span> <?php esc_html_e( 'Not connected', 'sgp-updater' ); ?>
+					<?php endif; ?>
+				</strong>
+				&mdash; <?php echo esc_html( $status['message'] ); ?>
+			</p>
+			<?php if ( ! empty( $status['fix'] ) ) : ?>
+				<p style="margin:.5em 0 0;"><?php echo esc_html( $status['fix'] ); ?></p>
+			<?php endif; ?>
+			<p style="margin:.75em 0 0;">
+				<a class="button" href="<?php echo esc_url( admin_url( 'options-general.php?page=sgp-updater&recheck=1' ) ); ?>">
+					<?php esc_html_e( 'Re-check connection', 'sgp-updater' ); ?>
+				</a>
+			</p>
+		</div>
 
 		<table class="widefat striped" style="max-width:820px;margin-bottom:1.5em;">
 			<tbody>
@@ -322,23 +453,49 @@ function sgp_updater_render_settings_page() {
 					<th scope="row"><?php esc_html_e( 'Branch', 'sgp-updater' ); ?></th>
 					<td><code>main</code></td>
 				</tr>
-				<tr>
-					<th scope="row"><?php esc_html_e( 'Connection', 'sgp-updater' ); ?></th>
-					<td>
-						<?php if ( $status['ok'] ) : ?>
-							<span style="color:#008a20;font-weight:600;">&#10003;</span>
-						<?php else : ?>
-							<span style="color:#d63638;font-weight:600;">&#10007;</span>
-						<?php endif; ?>
-						<?php echo esc_html( $status['message'] ); ?>
-					</td>
-				</tr>
 			</tbody>
 		</table>
 
 		<?php if ( sgp_updater_token_is_constant() ) : ?>
 			<p><?php esc_html_e( 'The access token is set in wp-config.php, so it cannot be changed here.', 'sgp-updater' ); ?></p>
 		<?php else : ?>
+
+			<h2><?php esc_html_e( 'Access token', 'sgp-updater' ); ?></h2>
+
+			<?php if ( '' === $token ) : ?>
+				<p style="max-width:820px;">
+					<?php esc_html_e( 'The theme lives in a private repository, so the site needs a read-only GitHub token to download updates. It takes about a minute to create.', 'sgp-updater' ); ?>
+				</p>
+			<?php endif; ?>
+
+			<div style="max-width:820px;background:#fff;border:1px solid #c3c4c7;padding:12px 18px;margin-bottom:1.5em;">
+				<p style="margin-top:0;">
+					<a class="button button-secondary" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">
+						<?php esc_html_e( 'Create a token on GitHub', 'sgp-updater' ); ?>
+					</a>
+				</p>
+				<p style="margin-bottom:.5em;"><strong><?php esc_html_e( 'Set these four things:', 'sgp-updater' ); ?></strong></p>
+				<ol style="margin:0 0 .5em 1.4em;">
+					<li>
+						<strong><?php esc_html_e( 'Resource owner', 'sgp-updater' ); ?></strong>
+						&mdash; <?php esc_html_e( 'change it to the organisation that owns the repository. It defaults to your personal account, and a personal token cannot see the organisation\'s private repositories.', 'sgp-updater' ); ?>
+					</li>
+					<li>
+						<strong><?php esc_html_e( 'Repository access', 'sgp-updater' ); ?></strong>
+						&mdash; <?php esc_html_e( 'choose Only select repositories, then tick this theme\'s repository and the sgp-updater repository.', 'sgp-updater' ); ?>
+					</li>
+					<li>
+						<strong><?php esc_html_e( 'Repository permissions → Contents → Read-only', 'sgp-updater' ); ?></strong>
+						&mdash; <?php esc_html_e( 'this is the one people miss. Without it the token can see the repository but cannot download a single file, and updates never appear.', 'sgp-updater' ); ?>
+					</li>
+					<li>
+						<strong><?php esc_html_e( 'Expiration', 'sgp-updater' ); ?></strong>
+						&mdash; <?php esc_html_e( 'set a calendar reminder for a week before it lapses. Updates stop silently when a token expires.', 'sgp-updater' ); ?>
+					</li>
+				</ol>
+				<p style="margin-bottom:0;"><?php esc_html_e( 'GitHub shows the token once. Copy it before leaving the page.', 'sgp-updater' ); ?></p>
+			</div>
+
 			<form method="post" action="options.php">
 				<?php settings_fields( 'sgp_updater' ); ?>
 				<table class="form-table" role="presentation">
@@ -354,14 +511,15 @@ function sgp_updater_render_settings_page() {
 								value="<?php echo esc_attr( get_option( 'sgp_updater_github_token', '' ) ); ?>"
 								class="regular-text"
 								autocomplete="off"
+								placeholder="github_pat_..."
 							/>
 							<p class="description">
-								<?php esc_html_e( 'Required for a private repository. Needs read access to the theme repository and nothing else.', 'sgp-updater' ); ?>
+								<?php esc_html_e( 'Saving re-checks the connection straight away and reports the result above.', 'sgp-updater' ); ?>
 							</p>
 						</td>
 					</tr>
 				</table>
-				<?php submit_button(); ?>
+				<?php submit_button( __( 'Save and check connection', 'sgp-updater' ) ); ?>
 			</form>
 		<?php endif; ?>
 
@@ -371,3 +529,43 @@ function sgp_updater_render_settings_page() {
 	</div>
 	<?php
 }
+
+/**
+ * Warn on the screens where someone would expect an update to appear.
+ *
+ * Without this the failure is silent: the theme simply never offers an update
+ * and nothing explains why. The notice only shows to users who can fix it, and
+ * only on the screens where the absence would be noticed.
+ *
+ * @return void
+ */
+function sgp_updater_admin_notice() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	$screen = get_current_screen();
+	if ( ! $screen || ! in_array( $screen->id, array( 'plugins', 'themes', 'update-core', 'dashboard' ), true ) ) {
+		return;
+	}
+
+	$status = sgp_updater_connection_status();
+	if ( $status['ok'] ) {
+		return;
+	}
+	?>
+	<div class="notice notice-warning">
+		<p>
+			<strong><?php esc_html_e( 'SGP Updater is not connected.', 'sgp-updater' ); ?></strong>
+			<?php echo esc_html( $status['message'] ); ?>
+			<?php if ( ! empty( $status['fix'] ) ) : ?>
+				<?php echo esc_html( $status['fix'] ); ?>
+			<?php endif; ?>
+			<a href="<?php echo esc_url( admin_url( 'options-general.php?page=sgp-updater' ) ); ?>">
+				<?php esc_html_e( 'Fix this', 'sgp-updater' ); ?>
+			</a>
+		</p>
+	</div>
+	<?php
+}
+add_action( 'admin_notices', 'sgp_updater_admin_notice' );
