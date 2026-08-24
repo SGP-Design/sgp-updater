@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.3
+ * Version:     1.0.4
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.3' );
+define( 'SGP_UPDATER_VERSION', '1.0.4' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
@@ -79,6 +79,34 @@ function sgp_updater_token_is_constant() {
 }
 
 /**
+ * Force an update checker to read the branch, ignoring releases and tags.
+ *
+ * With the branch set to "main", plugin-update-checker tries the latest
+ * GitHub Release first, then the highest tag, and only then the branch. So a
+ * repository carrying an old release reports that release as the newest
+ * version no matter what the branch says - which is how this plugin sat at
+ * 1.0.1 while main was several versions ahead.
+ *
+ * The documented release process here is "bump Version, commit, push". No
+ * tags, no releases, no build step. This makes the checker behave that way,
+ * for the theme and for the plugin alike, so a stray tag left in a repository
+ * can never quietly become the update source.
+ *
+ * @param object $checker A plugin or theme update checker.
+ * @return void
+ */
+function sgp_updater_use_branch_only( $checker ) {
+	add_filter(
+		'puc_vcs_update_detection_strategies-' . $checker->slug,
+		function ( $strategies ) {
+			// Keys defined by Puc\v5\Vcs\Api: 'latest_release', 'latest_tag',
+			// 'stable_tag', 'branch'. Everything but the branch goes.
+			return array_intersect_key( $strategies, array( 'branch' => true ) );
+		}
+	);
+}
+
+/**
  * Wire the active theme up to its GitHub repository.
  */
 function sgp_updater_init_theme_updater() {
@@ -106,6 +134,8 @@ function sgp_updater_init_theme_updater() {
 		$checker->setAuthentication( $token );
 	}
 
+	sgp_updater_use_branch_only( $checker );
+
 	$GLOBALS['sgp_updater_checker'] = $checker;
 }
 add_action( 'plugins_loaded', 'sgp_updater_init_theme_updater' );
@@ -131,6 +161,8 @@ function sgp_updater_init_self_updater() {
 	// itself without one - which keeps the token a client site holds scoped to
 	// that client's own theme repository, and nothing of SGP's. Sending the
 	// theme token here would re-create the coupling the public repo removes.
+	sgp_updater_use_branch_only( $checker );
+
 	$GLOBALS['sgp_updater_self_checker'] = $checker;
 }
 add_action( 'plugins_loaded', 'sgp_updater_init_self_updater' );
@@ -481,7 +513,7 @@ function sgp_updater_render_settings_page() {
 					</li>
 					<li>
 						<strong><?php esc_html_e( 'Repository access', 'sgp-updater' ); ?></strong>
-						&mdash; <?php esc_html_e( 'choose Only select repositories, then tick this theme\'s repository and the sgp-updater repository.', 'sgp-updater' ); ?>
+						&mdash; <?php esc_html_e( 'choose Only select repositories, then tick this theme\'s repository. That one only — this plugin updates itself from a public repository and needs no access of its own.', 'sgp-updater' ); ?>
 					</li>
 					<li>
 						<strong><?php esc_html_e( 'Repository permissions → Contents → Read-only', 'sgp-updater' ); ?></strong>
