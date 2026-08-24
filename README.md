@@ -9,7 +9,7 @@ Built so SGP can deploy client sites from GitHub without uploading zip files by 
 The plugin reads a `GitHub Theme URI` header from the active theme's `style.css`:
 
 ```
-GitHub Theme URI: https://github.com/SGP-Design/igs-website
+GitHub Theme URI: https://github.com/SGP-Design/example-website
 ```
 
 It then watches the `main` branch of that repository. Whenever the `Version:` header there is higher than the installed version, WordPress offers an update.
@@ -63,3 +63,18 @@ The update mechanism is [plugin-update-checker](https://github.com/YahnisElsts/p
 ## Requirements
 
 WordPress 6.0+, PHP 8.0+.
+
+## Why this repository is public
+
+The plugin updates itself from this repository. If it were private, every client
+site would need a token that could read it - which would mean a credential
+installed on a client's WordPress install granting access to an SGP-internal
+repository, purely so the plugin could patch itself.
+
+Public inverts that. The plugin self-updates with no credential at all, and the
+token a client site holds is scoped to that client's own theme repository and
+nothing else. There is nothing proprietary here: the plugin is configuration
+around [plugin-update-checker](https://github.com/YahnisElsts/plugin-update-checker)
+(MIT, vendored).
+
+**Client themes stay private.** This is the tool, not the work.

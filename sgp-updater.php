@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.2
+ * Version:     1.0.3
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.2' );
+define( 'SGP_UPDATER_VERSION', '1.0.3' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
@@ -127,11 +127,10 @@ function sgp_updater_init_self_updater() {
 
 	$checker->setBranch( 'main' );
 
-	$token = sgp_updater_github_token();
-	if ( '' !== $token ) {
-		$checker->setAuthentication( $token );
-	}
-
+	// No token. This repository is public precisely so the plugin can update
+	// itself without one - which keeps the token a client site holds scoped to
+	// that client's own theme repository, and nothing of SGP's. Sending the
+	// theme token here would re-create the coupling the public repo removes.
 	$GLOBALS['sgp_updater_self_checker'] = $checker;
 }
 add_action( 'plugins_loaded', 'sgp_updater_init_self_updater' );
