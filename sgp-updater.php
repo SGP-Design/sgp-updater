@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.4
+ * Version:     1.1.0
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,19 +16,55 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.4' );
+define( 'SGP_UPDATER_VERSION', '1.1.0' );
 
 /**
- * Read the repository URL from the active theme's `GitHub Theme URI` header.
+ * Normalize a client theme repository value to a GitHub URL.
  *
- * Deliberately the same header Git Updater uses, so a site can be moved between
- * the two without editing the theme.
+ * Accepts a full URL, owner/repository, or just the SGP client repository name.
  *
- * @return string Repository URL, or '' if the theme doesn't declare one.
+ * @param mixed $value Repository value.
+ * @return string
  */
-function sgp_updater_theme_repo_url() {
-	// WP_Theme::get() only recognises WordPress's own fixed set of headers and
-	// silently ignores custom ones, so read style.css directly.
+function sgp_updater_normalize_repo_url( $value ) {
+	if ( ! is_string( $value ) || '' === trim( $value ) ) {
+		return '';
+	}
+
+	$value = trim( $value );
+	$value = preg_replace( '#\.git$#i', '', $value );
+
+	if ( preg_match( '#^https?://#i', $value ) ) {
+		$parts = wp_parse_url( $value );
+		if ( ! is_array( $parts ) || empty( $parts['host'] ) || 'github.com' !== strtolower( $parts['host'] ) ) {
+			return '';
+		}
+		$path = isset( $parts['path'] ) ? trim( $parts['path'], '/' ) : '';
+	} else {
+		$path = trim( $value, '/' );
+	}
+
+	if ( false === strpos( $path, '/' ) ) {
+		$path = 'SGP-Design/' . $path;
+	}
+
+	if ( ! preg_match( '#^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$#', $path ) ) {
+		return '';
+	}
+
+	return 'https://github.com/' . $path;
+}
+
+/**
+ * Repository URL declared by the active theme itself.
+ *
+ * This is deliberately separate from the configured repository. Before the
+ * bootstrap theme exists, the active WordPress theme must never be treated as
+ * the target of the client repository updater.
+ *
+ * @return string
+ */
+function sgp_updater_active_theme_repo_url() {
 	$headers = get_file_data(
 		get_template_directory() . '/style.css',
 		array( 'repo' => 'GitHub Theme URI' )
@@ -36,18 +72,30 @@ function sgp_updater_theme_repo_url() {
 
 	$uri = isset( $headers['repo'] ) ? $headers['repo'] : '';
 
-	if ( ! is_string( $uri ) || '' === trim( $uri ) ) {
-		return '';
-	}
+	return sgp_updater_normalize_repo_url( $uri );
+}
 
-	$uri = trim( $uri );
+/**
+ * Client repository saved during SGP Updater setup.
+ *
+ * @return string
+ */
+function sgp_updater_configured_repo_url() {
+	return sgp_updater_normalize_repo_url( get_option( 'sgp_updater_theme_repo_url', '' ) );
+}
 
-	// Accept a bare `owner/repo` as well as a full URL.
-	if ( ! preg_match( '#^https?://#i', $uri ) ) {
-		$uri = 'https://github.com/' . ltrim( $uri, '/' );
-	}
+/**
+ * Repository used by the setup/status UI.
+ *
+ * Once the real or bootstrap client theme is active, its own header wins.
+ * Before that, use the repository selected during setup.
+ *
+ * @return string
+ */
+function sgp_updater_theme_repo_url() {
+	$active = sgp_updater_active_theme_repo_url();
 
-	return esc_url_raw( untrailingslashit( $uri ) );
+	return '' !== $active ? $active : sgp_updater_configured_repo_url();
 }
 
 /**
@@ -110,7 +158,7 @@ function sgp_updater_use_branch_only( $checker ) {
  * Wire the active theme up to its GitHub repository.
  */
 function sgp_updater_init_theme_updater() {
-	$repo = sgp_updater_theme_repo_url();
+	$repo = sgp_updater_active_theme_repo_url();
 
 	if ( '' === $repo ) {
 		return;
@@ -222,6 +270,17 @@ add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'sgp_updater_a
 function sgp_updater_register_settings() {
 	register_setting(
 		'sgp_updater',
+		'sgp_updater_theme_repo_url',
+		array(
+			'type'              => 'string',
+			'sanitize_callback' => 'sgp_updater_sanitize_repo_url',
+			'default'           => '',
+			'show_in_rest'      => false,
+		)
+	);
+
+	register_setting(
+		'sgp_updater',
 		'sgp_updater_github_token',
 		array(
 			'type'              => 'string',
@@ -232,6 +291,17 @@ function sgp_updater_register_settings() {
 	);
 }
 add_action( 'admin_init', 'sgp_updater_register_settings' );
+
+/**
+ * Normalize the repository field saved from the setup screen.
+ *
+ * @param mixed $value Raw repository value.
+ * @return string
+ */
+function sgp_updater_sanitize_repo_url( $value ) {
+	return sgp_updater_normalize_repo_url( $value );
+}
+
 
 /**
  * Strip whitespace and control characters from a submitted token.
@@ -288,6 +358,8 @@ function sgp_updater_flush_status() {
 }
 add_action( 'update_option_sgp_updater_github_token', 'sgp_updater_flush_status' );
 add_action( 'add_option_sgp_updater_github_token', 'sgp_updater_flush_status' );
+add_action( 'update_option_sgp_updater_theme_repo_url', 'sgp_updater_flush_status' );
+add_action( 'add_option_sgp_updater_theme_repo_url', 'sgp_updater_flush_status' );
 
 /**
  * Ask GitHub whether the repository is reachable with the current credentials.
@@ -303,8 +375,8 @@ function sgp_updater_check_connection() {
 	if ( '' === $repo ) {
 		return array(
 			'ok'      => false,
-			'message' => __( 'The active theme has no "GitHub Theme URI" header, so there is no repository to check.', 'sgp-updater' ),
-			'fix'     => __( 'This is a theme problem, not a token problem. The theme needs the header before it can be updated from GitHub.', 'sgp-updater' ),
+			'message' => __( 'No client theme repository has been selected yet.', 'sgp-updater' ),
+			'fix'     => __( 'Choose the client repository below, then connect the site.', 'sgp-updater' ),
 		);
 	}
 
@@ -428,6 +500,184 @@ function sgp_updater_github_get( $url ) {
 }
 
 /**
+ * Derive the client theme folder from the standard <slug>-website repository.
+ *
+ * @param string $repo Repository URL.
+ * @return string|WP_Error
+ */
+function sgp_updater_bootstrap_theme_slug( $repo ) {
+	$path = wp_parse_url( $repo, PHP_URL_PATH );
+	$name = is_string( $path ) ? basename( trim( $path, '/' ) ) : '';
+	$name = preg_replace( '/\.git$/i', '', $name );
+
+	if ( ! str_ends_with( $name, '-website' ) ) {
+		return new WP_Error(
+			'sgp_updater_repo_name',
+			__( 'Client repositories must use the standard <slug>-website name before SGP Updater can prepare the theme.', 'sgp-updater' )
+		);
+	}
+
+	$slug = substr( $name, 0, -strlen( '-website' ) );
+
+	if ( ! preg_match( '/^[a-z][a-z0-9_]*$/', $slug ) ) {
+		return new WP_Error(
+			'sgp_updater_theme_slug',
+			__( 'The repository name does not produce a valid SGP theme folder. Use the same lowercase slug used when the client site was scaffolded.', 'sgp-updater' )
+		);
+	}
+
+	return $slug;
+}
+
+/**
+ * Create and activate the tiny placeholder theme that gives WordPress a target
+ * for the first real client-theme update.
+ *
+ * The folder and GitHub Theme URI are identical to the eventual client theme,
+ * so version 0.0.0 is replaced through the normal SGP Updater path rather than
+ * through a one-off theme upload.
+ *
+ * @param string $repo Repository URL.
+ * @return array|WP_Error
+ */
+function sgp_updater_prepare_bootstrap_theme( $repo ) {
+	$repo = sgp_updater_normalize_repo_url( $repo );
+	if ( '' === $repo ) {
+		return new WP_Error( 'sgp_updater_repo_missing', __( 'A valid client repository is required.', 'sgp-updater' ) );
+	}
+
+	$slug = sgp_updater_bootstrap_theme_slug( $repo );
+	if ( is_wp_error( $slug ) ) {
+		return $slug;
+	}
+
+	$theme_root = get_theme_root();
+	$theme_dir  = trailingslashit( $theme_root ) . $slug;
+	$style_path = trailingslashit( $theme_dir ) . 'style.css';
+	$index_path = trailingslashit( $theme_dir ) . 'index.php';
+
+	if ( is_dir( $theme_dir ) ) {
+		if ( ! is_file( $style_path ) ) {
+			return new WP_Error(
+				'sgp_updater_theme_conflict',
+				sprintf( __( 'The theme folder %s already exists but is not a valid theme. SGP Updater will not overwrite it.', 'sgp-updater' ), $slug )
+			);
+		}
+
+		$headers = get_file_data( $style_path, array( 'repo' => 'GitHub Theme URI' ) );
+		$existing_repo = sgp_updater_normalize_repo_url( isset( $headers['repo'] ) ? $headers['repo'] : '' );
+
+		if ( $repo !== $existing_repo ) {
+			return new WP_Error(
+				'sgp_updater_theme_conflict',
+				sprintf( __( 'The theme folder %s already belongs to a different theme. SGP Updater will not overwrite it.', 'sgp-updater' ), $slug )
+			);
+		}
+
+		switch_theme( $slug );
+		delete_transient( 'sgp_updater_status' );
+
+		return array( 'slug' => $slug, 'created' => false );
+	}
+
+	if ( ! wp_mkdir_p( $theme_dir ) ) {
+		return new WP_Error(
+			'sgp_updater_theme_directory',
+			__( 'WordPress could not create the client theme folder. Check filesystem permissions on wp-content/themes.', 'sgp-updater' )
+		);
+	}
+
+	$display_name = ucwords( str_replace( '_', ' ', $slug ) ) . ' (SGP Bootstrap)';
+	$style = "/*\n"
+		. "Theme Name: " . $display_name . "\n"
+		. "Description: Temporary SGP bootstrap theme. The first client build replaces this through SGP Updater.\n"
+		. "Version: 0.0.0\n"
+		. "Requires at least: 6.0\n"
+		. "Requires PHP: 8.0\n"
+		. "Author: Strategic Growth Partners\n"
+		. "GitHub Theme URI: " . $repo . "\n"
+		. "*/\n\n"
+		. "html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif;background:#fff;color:#111}\n"
+		. ".sgp-bootstrap{min-height:100vh;display:grid;place-items:center;padding:2rem;text-align:center;box-sizing:border-box}\n";
+
+	$index = "<?php\n"
+		. "if ( ! defined( 'ABSPATH' ) ) { exit; }\n"
+		. "?>\n"
+		. "<!doctype html><html <?php language_attributes(); ?>><head><meta charset=\"<?php bloginfo( 'charset' ); ?>\">"
+		. "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\"><?php wp_head(); ?></head>"
+		. "<body <?php body_class(); ?>><main class=\"sgp-bootstrap\"><div><h1>SGP client theme connected</h1>"
+		. "<p>The first approved client build will replace this bootstrap theme through SGP Updater.</p></div></main>"
+		. "<?php wp_footer(); ?></body></html>\n";
+
+	if ( false === file_put_contents( $style_path, $style, LOCK_EX ) || false === file_put_contents( $index_path, $index, LOCK_EX ) ) {
+		if ( is_file( $style_path ) ) {
+			unlink( $style_path );
+		}
+		if ( is_file( $index_path ) ) {
+			unlink( $index_path );
+		}
+		if ( is_dir( $theme_dir ) ) {
+			rmdir( $theme_dir );
+		}
+
+		return new WP_Error(
+			'sgp_updater_theme_write',
+			__( 'WordPress could not write the bootstrap theme files. Check filesystem permissions on wp-content/themes.', 'sgp-updater' )
+		);
+	}
+
+	wp_clean_themes_cache( true );
+	switch_theme( $slug );
+	delete_transient( 'sgp_updater_status' );
+
+	return array( 'slug' => $slug, 'created' => true );
+}
+
+/**
+ * After a successful first-run connection, prepare the bootstrap theme
+ * automatically. This turns repository + token into the only setup step.
+ *
+ * @return void
+ */
+function sgp_updater_finish_setup_after_save() {
+	if ( ! is_admin() || ! current_user_can( 'manage_options' ) ) {
+		return;
+	}
+
+	if ( ! isset( $_GET['page'], $_GET['settings-updated'] ) || 'sgp-updater' !== $_GET['page'] || 'true' !== $_GET['settings-updated'] ) {
+		return;
+	}
+
+	$status = sgp_updater_connection_status( true );
+	if ( ! $status['ok'] ) {
+		return;
+	}
+
+	$repo = sgp_updater_theme_repo_url();
+	if ( '' !== sgp_updater_active_theme_repo_url() && $repo === sgp_updater_active_theme_repo_url() ) {
+		return;
+	}
+
+	$result = sgp_updater_prepare_bootstrap_theme( $repo );
+	$key = 'sgp_updater_setup_notice_' . get_current_user_id();
+
+	if ( is_wp_error( $result ) ) {
+		set_transient( $key, array( 'ok' => false, 'message' => $result->get_error_message() ), MINUTE_IN_SECONDS );
+		return;
+	}
+
+	set_transient(
+		$key,
+		array(
+			'ok'      => true,
+			'message' => __( 'Connected. SGP Updater prepared and activated the client bootstrap theme. The first real theme version can now arrive through the normal WordPress update flow.', 'sgp-updater' ),
+		),
+		MINUTE_IN_SECONDS
+	);
+}
+add_action( 'admin_init', 'sgp_updater_finish_setup_after_save', 20 );
+
+/**
  * Render the settings screen.
  */
 function sgp_updater_render_settings_page() {
@@ -439,9 +689,20 @@ function sgp_updater_render_settings_page() {
 	$theme  = wp_get_theme( get_template() );
 	$status = sgp_updater_connection_status( true );
 	$token  = sgp_updater_github_token();
+	$notice_key = 'sgp_updater_setup_notice_' . get_current_user_id();
+	$setup_notice = get_transient( $notice_key );
+	if ( false !== $setup_notice ) {
+		delete_transient( $notice_key );
+	}
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'SGP Updater', 'sgp-updater' ); ?></h1>
+
+		<?php if ( is_array( $setup_notice ) && isset( $setup_notice['message'] ) ) : ?>
+			<div class="notice <?php echo ! empty( $setup_notice['ok'] ) ? 'notice-success' : 'notice-error'; ?> inline" style="margin:1em 0;padding:12px;">
+				<p style="margin:0;"><?php echo esc_html( $setup_notice['message'] ); ?></p>
+			</div>
+		<?php endif; ?>
 
 		<div class="notice <?php echo $status['ok'] ? 'notice-success' : 'notice-error'; ?> inline" style="margin:1em 0;padding:12px;">
 			<p style="margin:0;font-size:14px;">
@@ -487,18 +748,12 @@ function sgp_updater_render_settings_page() {
 			</tbody>
 		</table>
 
-		<?php if ( sgp_updater_token_is_constant() ) : ?>
-			<p><?php esc_html_e( 'The access token is set in wp-config.php, so it cannot be changed here.', 'sgp-updater' ); ?></p>
-		<?php else : ?>
+		<h2><?php esc_html_e( 'Connect this site to its client theme', 'sgp-updater' ); ?></h2>
+		<p style="max-width:820px;">
+			<?php esc_html_e( 'Choose the private client repository and provide the read-only GitHub token once. After the connection passes, SGP Updater prepares the correctly named bootstrap theme automatically so the first real build arrives through the same update flow as every later release.', 'sgp-updater' ); ?>
+		</p>
 
-			<h2><?php esc_html_e( 'Access token', 'sgp-updater' ); ?></h2>
-
-			<?php if ( '' === $token ) : ?>
-				<p style="max-width:820px;">
-					<?php esc_html_e( 'The theme lives in a private repository, so the site needs a read-only GitHub token to download updates. It takes about a minute to create.', 'sgp-updater' ); ?>
-				</p>
-			<?php endif; ?>
-
+		<?php if ( ! sgp_updater_token_is_constant() && '' === $token ) : ?>
 			<div style="max-width:820px;background:#fff;border:1px solid #c3c4c7;padding:12px 18px;margin-bottom:1.5em;">
 				<p style="margin-top:0;">
 					<a class="button button-secondary" href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener noreferrer">
@@ -507,33 +762,40 @@ function sgp_updater_render_settings_page() {
 				</p>
 				<p style="margin-bottom:.5em;"><strong><?php esc_html_e( 'Set these four things:', 'sgp-updater' ); ?></strong></p>
 				<ol style="margin:0 0 .5em 1.4em;">
-					<li>
-						<strong><?php esc_html_e( 'Resource owner', 'sgp-updater' ); ?></strong>
-						&mdash; <?php esc_html_e( 'change it to the organisation that owns the repository. It defaults to your personal account, and a personal token cannot see the organisation\'s private repositories.', 'sgp-updater' ); ?>
-					</li>
-					<li>
-						<strong><?php esc_html_e( 'Repository access', 'sgp-updater' ); ?></strong>
-						&mdash; <?php esc_html_e( 'choose Only select repositories, then tick this theme\'s repository. That one only — this plugin updates itself from a public repository and needs no access of its own.', 'sgp-updater' ); ?>
-					</li>
-					<li>
-						<strong><?php esc_html_e( 'Repository permissions → Contents → Read-only', 'sgp-updater' ); ?></strong>
-						&mdash; <?php esc_html_e( 'this is the one people miss. Without it the token can see the repository but cannot download a single file, and updates never appear.', 'sgp-updater' ); ?>
-					</li>
-					<li>
-						<strong><?php esc_html_e( 'Expiration', 'sgp-updater' ); ?></strong>
-						&mdash; <?php esc_html_e( 'set a calendar reminder for a week before it lapses. Updates stop silently when a token expires.', 'sgp-updater' ); ?>
-					</li>
+					<li><strong><?php esc_html_e( 'Resource owner', 'sgp-updater' ); ?></strong> — <?php esc_html_e( 'SGP-Design.', 'sgp-updater' ); ?></li>
+					<li><strong><?php esc_html_e( 'Repository access', 'sgp-updater' ); ?></strong> — <?php esc_html_e( 'Only select repositories, then choose this client theme repository only.', 'sgp-updater' ); ?></li>
+					<li><strong><?php esc_html_e( 'Repository permissions → Contents → Read-only', 'sgp-updater' ); ?></strong> — <?php esc_html_e( 'this lets WordPress download the theme without granting write access.', 'sgp-updater' ); ?></li>
+					<li><strong><?php esc_html_e( 'Expiration', 'sgp-updater' ); ?></strong> — <?php esc_html_e( 'set a calendar reminder before it lapses.', 'sgp-updater' ); ?></li>
 				</ol>
 				<p style="margin-bottom:0;"><?php esc_html_e( 'GitHub shows the token once. Copy it before leaving the page.', 'sgp-updater' ); ?></p>
 			</div>
+		<?php endif; ?>
 
-			<form method="post" action="options.php">
-				<?php settings_fields( 'sgp_updater' ); ?>
-				<table class="form-table" role="presentation">
+		<form method="post" action="options.php">
+			<?php settings_fields( 'sgp_updater' ); ?>
+			<table class="form-table" role="presentation">
+				<tr>
+					<th scope="row"><label for="sgp_updater_theme_repo_url"><?php esc_html_e( 'Client repository', 'sgp-updater' ); ?></label></th>
+					<td>
+						<input
+							type="text"
+							id="sgp_updater_theme_repo_url"
+							name="sgp_updater_theme_repo_url"
+							value="<?php echo esc_attr( get_option( 'sgp_updater_theme_repo_url', $repo ) ); ?>"
+							class="regular-text"
+							placeholder="halaakwa-website"
+						/>
+						<p class="description"><?php esc_html_e( 'Repository name is enough; SGP-Design/ and the GitHub URL are filled in automatically.', 'sgp-updater' ); ?></p>
+					</td>
+				</tr>
+				<?php if ( sgp_updater_token_is_constant() ) : ?>
 					<tr>
-						<th scope="row">
-							<label for="sgp_updater_github_token"><?php esc_html_e( 'GitHub access token', 'sgp-updater' ); ?></label>
-						</th>
+						<th scope="row"><?php esc_html_e( 'GitHub access token', 'sgp-updater' ); ?></th>
+						<td><?php esc_html_e( 'Set in wp-config.php.', 'sgp-updater' ); ?></td>
+					</tr>
+				<?php else : ?>
+					<tr>
+						<th scope="row"><label for="sgp_updater_github_token"><?php esc_html_e( 'GitHub access token', 'sgp-updater' ); ?></label></th>
 						<td>
 							<input
 								type="password"
@@ -544,15 +806,12 @@ function sgp_updater_render_settings_page() {
 								autocomplete="off"
 								placeholder="github_pat_..."
 							/>
-							<p class="description">
-								<?php esc_html_e( 'Saving re-checks the connection straight away and reports the result above.', 'sgp-updater' ); ?>
-							</p>
 						</td>
 					</tr>
-				</table>
-				<?php submit_button( __( 'Save and check connection', 'sgp-updater' ) ); ?>
-			</form>
-		<?php endif; ?>
+				<?php endif; ?>
+			</table>
+			<?php submit_button( '' === sgp_updater_active_theme_repo_url() ? __( 'Connect and prepare theme', 'sgp-updater' ) : __( 'Save and check connection', 'sgp-updater' ) ); ?>
+		</form>
 
 		<p class="description" style="max-width:820px;">
 			<?php esc_html_e( 'Updates appear under Dashboard → Updates and Appearance → Themes, the same as any other theme update. An update is offered whenever the Version header in the repository is higher than the installed version.', 'sgp-updater' ); ?>
