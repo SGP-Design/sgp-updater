@@ -87,15 +87,15 @@ function sgp_updater_configured_repo_url() {
 /**
  * Repository used by the setup/status UI.
  *
- * Once the real or bootstrap client theme is active, its own header wins.
- * Before that, use the repository selected during setup.
+ * A repository explicitly selected during setup wins. Existing sites that
+ * predate this setup field continue to fall back to the active theme header.
  *
  * @return string
  */
 function sgp_updater_theme_repo_url() {
-	$active = sgp_updater_active_theme_repo_url();
+	$configured = sgp_updater_configured_repo_url();
 
-	return '' !== $active ? $active : sgp_updater_configured_repo_url();
+	return '' !== $configured ? $configured : sgp_updater_active_theme_repo_url();
 }
 
 /**
@@ -265,7 +265,7 @@ function sgp_updater_action_links( $links ) {
 add_filter( 'plugin_action_links_' . plugin_basename( __FILE__ ), 'sgp_updater_action_links' );
 
 /**
- * Register the token setting.
+ * Register the updater setup settings.
  */
 function sgp_updater_register_settings() {
 	register_setting(
@@ -781,7 +781,7 @@ function sgp_updater_render_settings_page() {
 							type="text"
 							id="sgp_updater_theme_repo_url"
 							name="sgp_updater_theme_repo_url"
-							value="<?php echo esc_attr( get_option( 'sgp_updater_theme_repo_url', $repo ) ); ?>"
+							value="<?php echo esc_attr( '' !== sgp_updater_configured_repo_url() ? sgp_updater_configured_repo_url() : $repo ); ?>"
 							class="regular-text"
 							placeholder="halaakwa-website"
 						/>
