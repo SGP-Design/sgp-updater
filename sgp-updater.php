@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.0.4
+ * Version:     1.0.5
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,10 +16,14 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.0.4' );
+define( 'SGP_UPDATER_VERSION', '1.0.5' );
 
 /**
  * Read the repository URL from the active theme's `GitHub Theme URI` header.
+ *
+ * "Active theme" is the stylesheet theme: with a child theme active, that is
+ * the child, which is the theme SGP built. Its parent (e.g. Hello Elementor) is
+ * someone else's and updates from WordPress.org as usual.
  *
  * Deliberately the same header Git Updater uses, so a site can be moved between
  * the two without editing the theme.
@@ -30,7 +34,7 @@ function sgp_updater_theme_repo_url() {
 	// WP_Theme::get() only recognises WordPress's own fixed set of headers and
 	// silently ignores custom ones, so read style.css directly.
 	$headers = get_file_data(
-		get_template_directory() . '/style.css',
+		get_stylesheet_directory() . '/style.css',
 		array( 'repo' => 'GitHub Theme URI' )
 	);
 
@@ -120,8 +124,8 @@ function sgp_updater_init_theme_updater() {
 
 	$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 		$repo,
-		get_template_directory() . '/style.css',
-		get_template()
+		get_stylesheet_directory() . '/style.css',
+		get_stylesheet()
 	);
 
 	// Track the branch and compare the `Version:` header in style.css, so a
@@ -436,7 +440,7 @@ function sgp_updater_render_settings_page() {
 	}
 
 	$repo   = sgp_updater_theme_repo_url();
-	$theme  = wp_get_theme( get_template() );
+	$theme  = wp_get_theme( get_stylesheet() );
 	$status = sgp_updater_connection_status( true );
 	$token  = sgp_updater_github_token();
 	?>

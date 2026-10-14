@@ -18,6 +18,8 @@ So the release process is: bump `Version:` in `style.css`, commit, push. Nothing
 
 The header name is deliberately the same one [Git Updater](https://github.com/afragen/git-updater) uses, so a site can be moved between the two without editing the theme.
 
+**Child themes** work the same way. The header goes in the child theme's `style.css`; the plugin updates the child from its repository and leaves the parent (for example Hello Elementor) to WordPress.org's normal updates.
+
 The plugin also keeps *itself* updated from `SGP-Design/sgp-updater` the same way.
 
 ## Installation
