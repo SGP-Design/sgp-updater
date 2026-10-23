@@ -6,13 +6,15 @@ Built so SGP can deploy client sites from GitHub without uploading zip files by 
 
 ## How it works
 
-The plugin reads a `GitHub Theme URI` header from the active theme's `style.css`:
+The plugin reads a `GitHub Theme URI` header from the active theme's `style.css` using WordPress `get_file_data()` (not `WP_Theme::get()`, which does not recognize the custom header):
 
 ```
 GitHub Theme URI: https://github.com/SGP-Design/example-website
 ```
 
 It then watches the `main` branch of that repository. Whenever the `Version:` header there is higher than the installed version, WordPress offers an update.
+
+The updater forces the **branch-only** strategy for themes and for the plugin itself. Existing GitHub tags and releases are ignored, even if they contain different version numbers. Do not create tags or GitHub releases as part of normal delivery.
 
 So the release process is: bump `Version:` in `style.css`, commit, push. Nothing else.
 
@@ -26,9 +28,9 @@ The plugin also keeps *itself* updated from `SGP-Design/sgp-updater` the same wa
 
 1. Download this repository as a zip
 2. **Plugins → Add New → Upload Plugin**, then activate
-3. **Settings → SGP Updates**, and paste a GitHub access token
+3. **Settings → SGP Updater**, and paste a GitHub access token
 
-The token is only needed for private repositories. It needs read access to the theme repository and nothing else.
+The token is only needed for private theme repositories. For a fine-grained token, select the relevant private theme repository and grant **Repository permissions → Contents: Read-only**. No other permission is needed.
 
 ### Storing the token outside the database
 
@@ -42,15 +44,17 @@ A constant keeps the token out of the database, so a database export doesn't lea
 
 ## The settings screen
 
-**Settings → SGP Updates** reports the active theme and version, the repository it found, and whether it can actually reach that repository. The connection line distinguishes the failures that look identical from the outside:
+**Settings → SGP Updater** reports the active theme and version, the repository it found, and whether it can actually reach that repository. The connection line distinguishes the failures that look identical from the outside:
 
 | What it says | What it means |
 | --- | --- |
 | Connected | Working |
 | Could not reach github.com | The host is blocking outbound connections |
 | GitHub rejected the token | Token is wrong or expired |
-| Repository not found | Wrong address, or the token has no access to it |
+| Repository not found | Wrong repository address, repository not selected on the token, or missing **Contents: Read-only** access |
 | No `GitHub Theme URI` header | The theme doesn't declare a repository |
+
+A GitHub `404` while looking up the configured repository means it is **not visible to the supplied credentials**; it does not establish that the repository was deleted.
 
 ## What it does not touch
 
