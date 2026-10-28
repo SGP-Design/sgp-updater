@@ -49,13 +49,15 @@ SGP Updater refuses to overwrite an existing theme folder if it belongs to a dif
 
 ## How later updates work
 
-The active client theme declares its repository in `style.css`:
+The active client theme declares its repository in `style.css`. SGP Updater reads it with WordPress `get_file_data()` (not `WP_Theme::get()`, which does not recognize the custom header):
 
 ```
 GitHub Theme URI: https://github.com/SGP-Design/example-website
 ```
 
 SGP Updater watches that repository's `main` branch. Whenever the `Version:` header there is higher than the installed version, WordPress offers a normal theme update under **Dashboard → Updates** and **Appearance → Themes**.
+
+The updater forces the **branch-only** strategy for themes and for the plugin itself. Existing GitHub tags and releases are ignored, even if they contain different version numbers.
 
 The release process is therefore:
 
@@ -64,6 +66,8 @@ bump Version: → merge approved build to main → update appears in WordPress
 ```
 
 No tags or GitHub Releases are used for client theme delivery.
+
+**Child themes** work the same way. The header goes in the child theme's `style.css`; the plugin updates the child from its repository and leaves the parent (for example Hello Elementor) to WordPress.org's normal updates.
 
 The plugin also keeps itself updated from `SGP-Design/sgp-updater`.
 
@@ -101,8 +105,11 @@ Typical failures are explained directly in the screen:
 | Connected | The site can see and download the client theme |
 | Could not reach github.com | The host is blocking outbound connections |
 | GitHub rejected the token | The token is invalid or expired |
-| Repository not found | Wrong repository or token scope |
+| Repository not found | Wrong repository address, repository not selected on the token, or missing **Contents: Read-only** access |
 | Token can see repo but cannot read files | Contents permission is missing |
+| No `GitHub Theme URI` header | The theme doesn't declare a repository |
+
+A GitHub `404` while looking up the configured repository means it is **not visible to the supplied credentials**; it does not establish that the repository was deleted.
 
 ## Safety boundaries
 

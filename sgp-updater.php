@@ -62,11 +62,18 @@ function sgp_updater_normalize_repo_url( $value ) {
  * bootstrap theme exists, the active WordPress theme must never be treated as
  * the target of the client repository updater.
  *
+ * "Active theme" is the stylesheet theme: with a child theme active, that is
+ * the child, which is the theme SGP built. Its parent (e.g. Hello Elementor) is
+ * someone else's and updates from WordPress.org as usual.
+ *
+ * Deliberately the same header Git Updater uses, so a site can be moved between
+ * the two without editing the theme.
+ *
  * @return string
  */
 function sgp_updater_active_theme_repo_url() {
 	$headers = get_file_data(
-		get_template_directory() . '/style.css',
+		get_stylesheet_directory() . '/style.css',
 		array( 'repo' => 'GitHub Theme URI' )
 	);
 
@@ -168,8 +175,8 @@ function sgp_updater_init_theme_updater() {
 
 	$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 		$repo,
-		get_template_directory() . '/style.css',
-		get_template()
+		get_stylesheet_directory() . '/style.css',
+		get_stylesheet()
 	);
 
 	// Track the branch and compare the `Version:` header in style.css, so a
@@ -686,7 +693,7 @@ function sgp_updater_render_settings_page() {
 	}
 
 	$repo   = sgp_updater_theme_repo_url();
-	$theme  = wp_get_theme( get_template() );
+	$theme  = wp_get_theme( get_stylesheet() );
 	$status = sgp_updater_connection_status( true );
 	$token  = sgp_updater_github_token();
 	$notice_key = 'sgp_updater_setup_notice_' . get_current_user_id();
