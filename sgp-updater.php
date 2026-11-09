@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.1.0
+ * Version:     1.2.0
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.1.0' );
+define( 'SGP_UPDATER_VERSION', '1.2.0' );
 
 /**
  * Normalize a client theme repository value to a GitHub URL.
@@ -367,6 +367,50 @@ add_action( 'update_option_sgp_updater_github_token', 'sgp_updater_flush_status'
 add_action( 'add_option_sgp_updater_github_token', 'sgp_updater_flush_status' );
 add_action( 'update_option_sgp_updater_theme_repo_url', 'sgp_updater_flush_status' );
 add_action( 'add_option_sgp_updater_theme_repo_url', 'sgp_updater_flush_status' );
+
+/**
+ * Clear the linked repository and its token.
+ *
+ * Removes what was saved on the settings screen and nothing else: no theme is
+ * changed, and a token set in wp-config.php stays where it is.
+ *
+ * @return void
+ */
+function sgp_updater_clear_repo() {
+	if ( ! current_user_can( 'manage_options' ) ) {
+		wp_die( esc_html__( 'You are not allowed to change SGP Updater settings.', 'sgp-updater' ), '', array( 'response' => 403 ) );
+	}
+
+	check_admin_referer( 'sgp_updater_clear_repo' );
+
+	delete_option( 'sgp_updater_theme_repo_url' );
+	delete_option( 'sgp_updater_github_token' );
+	sgp_updater_flush_status();
+
+	$message = __( 'Cleared the linked repository and token.', 'sgp-updater' );
+	if ( sgp_updater_token_is_constant() ) {
+		$message .= ' ' . __( 'The token set in wp-config.php is still in place; remove it there.', 'sgp-updater' );
+	}
+
+	$theme_repo = sgp_updater_active_theme_repo_url();
+	if ( '' !== $theme_repo ) {
+		/* translators: %s: repository URL. */
+		$message .= ' ' . sprintf( __( 'The active theme names %s in its own files, so this screen still shows it.', 'sgp-updater' ), $theme_repo );
+	}
+
+	set_transient(
+		'sgp_updater_setup_notice_' . get_current_user_id(),
+		array(
+			'ok'      => true,
+			'message' => $message,
+		),
+		MINUTE_IN_SECONDS
+	);
+
+	wp_safe_redirect( admin_url( 'options-general.php?page=sgp-updater' ) );
+	exit;
+}
+add_action( 'admin_post_sgp_updater_clear_repo', 'sgp_updater_clear_repo' );
 
 /**
  * Ask GitHub whether the repository is reachable with the current credentials.
@@ -788,7 +832,7 @@ function sgp_updater_render_settings_page() {
 							type="text"
 							id="sgp_updater_theme_repo_url"
 							name="sgp_updater_theme_repo_url"
-							value="<?php echo esc_attr( '' !== sgp_updater_configured_repo_url() ? sgp_updater_configured_repo_url() : $repo ); ?>"
+							value="<?php echo esc_attr( sgp_updater_configured_repo_url() ); ?>"
 							class="regular-text"
 							placeholder="halaakwa-website"
 						/>
@@ -819,6 +863,14 @@ function sgp_updater_render_settings_page() {
 			</table>
 			<?php submit_button( '' === sgp_updater_active_theme_repo_url() ? __( 'Connect and prepare theme', 'sgp-updater' ) : __( 'Save and check connection', 'sgp-updater' ) ); ?>
 		</form>
+
+		<?php if ( '' !== sgp_updater_configured_repo_url() || '' !== get_option( 'sgp_updater_github_token', '' ) ) : ?>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" onsubmit="return window.confirm(<?php echo esc_attr( wp_json_encode( __( 'Clear the linked repository and its token from this site? No theme is changed.', 'sgp-updater' ) ) ); ?>);">
+				<input type="hidden" name="action" value="sgp_updater_clear_repo" />
+				<?php wp_nonce_field( 'sgp_updater_clear_repo' ); ?>
+				<?php submit_button( __( 'Clear linked repository', 'sgp-updater' ), 'delete', 'sgp_updater_clear', false ); ?>
+			</form>
+		<?php endif; ?>
 
 		<p class="description" style="max-width:820px;">
 			<?php esc_html_e( 'Updates appear under Dashboard → Updates and Appearance → Themes, the same as any other theme update. An update is offered whenever the Version header in the repository is higher than the installed version.', 'sgp-updater' ); ?>
