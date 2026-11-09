@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.2.0
+ * Version:     1.2.1
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.2.0' );
+define( 'SGP_UPDATER_VERSION', '1.2.1' );
 
 /**
  * Normalize a client theme repository value to a GitHub URL.
@@ -832,7 +832,7 @@ function sgp_updater_render_settings_page() {
 							type="text"
 							id="sgp_updater_theme_repo_url"
 							name="sgp_updater_theme_repo_url"
-							value="<?php echo esc_attr( sgp_updater_configured_repo_url() ); ?>"
+							value="<?php echo esc_attr( '' !== sgp_updater_configured_repo_url() ? sgp_updater_configured_repo_url() : $repo ); ?>"
 							class="regular-text"
 							placeholder="halaakwa-website"
 						/>
