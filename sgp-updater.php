@@ -3,7 +3,7 @@
  * Plugin Name: SGP Updater
  * Plugin URI:  https://github.com/SGP-Design/sgp-updater
  * Description: Keeps the active SGP-built theme updated from its GitHub repository, using WordPress's own update flow.
- * Version:     1.2.1
+ * Version:     1.3.0
  * Author:      Strategic Growth Partners
  * License:     GPL-2.0-or-later
  * Requires at least: 6.0
@@ -16,7 +16,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'SGP_UPDATER_VERSION', '1.2.1' );
+define( 'SGP_UPDATER_VERSION', '1.3.0' );
 
 /**
  * Normalize a client theme repository value to a GitHub URL.
@@ -162,21 +162,65 @@ function sgp_updater_use_branch_only( $checker ) {
 }
 
 /**
- * Wire the active theme up to its GitHub repository.
+ * Installed themes, other than the active one, that declare the repository
+ * linked on the settings screen. They get updates before they are activated.
+ *
+ * @return string[] Theme folder names.
+ */
+function sgp_updater_linked_inactive_themes() {
+	$linked = sgp_updater_configured_repo_url();
+	if ( '' === $linked ) {
+		return array();
+	}
+
+	$themes = array();
+	foreach ( wp_get_themes() as $slug => $theme ) {
+		if ( get_stylesheet() === $slug ) {
+			continue;
+		}
+
+		$headers = get_file_data( $theme->get_stylesheet_directory() . '/style.css', array( 'repo' => 'GitHub Theme URI' ) );
+		if ( sgp_updater_normalize_repo_url( isset( $headers['repo'] ) ? $headers['repo'] : '' ) === $linked ) {
+			$themes[] = (string) $slug;
+		}
+	}
+
+	return $themes;
+}
+
+/**
+ * Wire the active theme, and any inactive theme linked on the settings
+ * screen, up to their GitHub repositories.
  */
 function sgp_updater_init_theme_updater() {
 	$repo = sgp_updater_active_theme_repo_url();
 
-	if ( '' === $repo ) {
-		return;
+	if ( '' !== $repo ) {
+		$GLOBALS['sgp_updater_checker'] = sgp_updater_theme_checker( $repo, get_stylesheet() );
 	}
 
+	if ( is_admin() || wp_doing_cron() ) {
+		foreach ( sgp_updater_linked_inactive_themes() as $slug ) {
+			sgp_updater_theme_checker( sgp_updater_configured_repo_url(), $slug );
+		}
+	}
+}
+add_action( 'plugins_loaded', 'sgp_updater_init_theme_updater' );
+
+/**
+ * Update checker for one installed theme.
+ *
+ * @param string $repo Repository URL.
+ * @param string $slug Theme folder name.
+ * @return object
+ */
+function sgp_updater_theme_checker( $repo, $slug ) {
 	require_once __DIR__ . '/plugin-update-checker/plugin-update-checker.php';
 
 	$checker = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
 		$repo,
-		get_stylesheet_directory() . '/style.css',
-		get_stylesheet()
+		get_theme_root( $slug ) . '/' . $slug . '/style.css',
+		$slug
 	);
 
 	// Track the branch and compare the `Version:` header in style.css, so a
@@ -191,9 +235,8 @@ function sgp_updater_init_theme_updater() {
 
 	sgp_updater_use_branch_only( $checker );
 
-	$GLOBALS['sgp_updater_checker'] = $checker;
+	return $checker;
 }
-add_action( 'plugins_loaded', 'sgp_updater_init_theme_updater' );
 
 /**
  * Keep this plugin updated from its own repository.
@@ -709,8 +752,23 @@ function sgp_updater_finish_setup_after_save() {
 		return;
 	}
 
+	$key    = 'sgp_updater_setup_notice_' . get_current_user_id();
+	$linked = sgp_updater_linked_inactive_themes();
+	if ( $linked ) {
+		$theme = wp_get_theme( $linked[0] );
+		set_transient(
+			$key,
+			array(
+				'ok'      => true,
+				/* translators: 1: theme name, 2: version. */
+				'message' => sprintf( __( 'Linked to %1$s %2$s, which is installed but not active. Its updates appear under Dashboard → Updates; activate it under Appearance → Themes when you are ready.', 'sgp-updater' ), $theme->get( 'Name' ), $theme->get( 'Version' ) ),
+			),
+			MINUTE_IN_SECONDS
+		);
+		return;
+	}
+
 	$result = sgp_updater_prepare_bootstrap_theme( $repo );
-	$key = 'sgp_updater_setup_notice_' . get_current_user_id();
 
 	if ( is_wp_error( $result ) ) {
 		set_transient( $key, array( 'ok' => false, 'message' => $result->get_error_message() ), MINUTE_IN_SECONDS );
